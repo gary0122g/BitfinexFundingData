@@ -1,0 +1,34 @@
+# 二進制文件
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+BitfinexFundingData
+
+# 測試二進制文件
+*.test
+
+# 覆蓋率工具生成的文件
+*.out
+
+# 依賴目錄
+/vendor/
+
+# IDE 文件
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 環境變數文件
+.env
+
+# SQLite 數據庫文件
+*.db
+*.sqlite
+*.sqlite3
+
+# 日誌文件
+*.log
+
