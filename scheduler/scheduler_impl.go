@@ -35,6 +35,10 @@ func (s *Scheduler) Start() {
 		s.wg.Add(1)
 		go s.worker()
 	}
+
+	// Start a goroutine to handle periodic tasks
+	s.wg.Add(1)
+	go s.periodicTaskHandler()
 }
 
 // worker processes tasks from the task queue
@@ -55,6 +59,29 @@ func (s *Scheduler) worker() {
 					// Actual retry logic can be added here
 				}
 			}
+		case <-s.quit:
+			return
+		}
+	}
+}
+
+// periodicTaskHandler checks and executes periodic tasks at their scheduled intervals
+func (s *Scheduler) periodicTaskHandler() {
+	defer s.wg.Done()
+
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			s.mu.Lock()
+			for _, task := range s.periodicTask {
+				if task.ShouldRun() {
+					s.SubmitTask(task)
+				}
+			}
+			s.mu.Unlock()
 		case <-s.quit:
 			return
 		}
