@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bitfinex 資金數據查看器</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .card {
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .chart-container {
+            height: 300px;
+            position: relative;
+        }
+
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+        }
+
+        .refresh-btn {
+            cursor: pointer;
+            color: #0d6efd;
+        }
+
+        .refresh-btn:hover {
+            color: #0a58ca;
+        }
+
+        .error-message {
+            color: #dc3545;
+            padding: 10px;
+            text-align: center;
+        }
+
+        @media (max-width: 768px) {
+            .table-responsive {
+                overflow-x: auto;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">Bitfinex 資金數據查看器</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#" id="nav-funding-stats">資金統計</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" id="nav-funding-ticker">資金行情</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" id="nav-funding-book">資金訂單簿</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row mb-3">
+            <div class="col-md-5">
+                <div class="input-group">
+                    <label class="input-group-text" for="currency-select">貨幣</label>
+                    <select class="form-select" id="currency-select">
+                        <option value="fUSD" selected>fUSD</option>
+                        <option value="fUST">fUST</option>
+                    </select>
+                </div>
+            </div>
+            <div class="col-md-5" id="limit-container">
+                <div class="input-group">
+                    <label class="input-group-text" for="limit-select">顯示筆數</label>
+                    <select class="form-select" id="limit-select">
+                        <option value="10">10</option>
+                        <option value="50" selected>50</option>
+                        <option value="100">100</option>
+                        <option value="250">250</option>
+                    </select>
+                </div>
+            </div>
+            <div class="col-md-2 text-end">
+                <button id="refresh-button" class="btn btn-outline-primary">
+                    <i class="bi bi-arrow-clockwise"></i> 刷新
+                </button>
+            </div>
+        </div>
+
+        <!-- 資金統計視圖 -->
+        <div id="funding-stats-view">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">資金利率 (APR) 趨勢</h5>
+                    <div id="chart-last-updated" class="text-muted small"></div>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <div id="chart-loading" class="loading-overlay" style="display: none;">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">載入中...</span>
+                            </div>
+                        </div>
+                        <canvas id="frr-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h5>資金統計數據表</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>時間</th>
+                                    <th>APR</th>
+                                    <th>平均期限</th>
+                                    <th>資金總量</th>
+                                    <th>已使用資金</th>
+                                    <th>閾值以下資金</th>
+                                </tr>
+                            </thead>
+                            <tbody id="funding-stats-table">
+                                <tr>
+                                    <td colspan="6" class="text-center">載入中...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 資金行情視圖 -->
+        <div id="funding-ticker-view" style="display: none;">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">當前資金行情</h5>
+                            <div id="ticker-last-updated" class="text-muted small"></div>
+                        </div>
+                        <div class="card-body">
+                            <div id="ticker-loading" class="text-center" style="display: none;">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">載入中...</span>
+                                </div>
+                            </div>
+                            <div id="ticker-error" class="error-message" style="display: none;"></div>
+                            <table class="table">
+                                <tbody id="funding-ticker-info">
+                                    <!-- 數據將通過 JavaScript 填充 -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>買賣盤資訊</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-6 text-center">
+                                    <h6 class="text-success">買入</h6>
+                                    <div id="bid-info"></div>
+                                </div>
+                                <div class="col-6 text-center">
+                                    <h6 class="text-danger">賣出</h6>
+                                    <div id="ask-info"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 資金訂單簿視圖 -->
+        <div id="funding-book-view" style="display: none;">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">資金訂單簿</h5>
+                    <div id="book-last-updated" class="text-muted small"></div>
+                </div>
+                <div class="card-body">
+                    <div id="book-loading" class="text-center" style="display: none;">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">載入中...</span>
+                        </div>
+                    </div>
+                    <div id="book-error" class="error-message" style="display: none;"></div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6 class="text-center text-success">買入訂單</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>利率</th>
+                                            <th>期限</th>
+                                            <th>數量</th>
+                                            <th>總計</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="bid-orders">
+                                        <!-- 數據將通過 JavaScript 填充 -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="text-center text-danger">賣出訂單</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>利率</th>
+                                            <th>期限</th>
+                                            <th>數量</th>
+                                            <th>總計</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="ask-orders">
+                                        <!-- 數據將通過 JavaScript 填充 -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 全局變量
+        let currentView = 'funding-stats';
+        let frrChart = null;
+        let autoRefreshInterval = null;
+        const AUTO_REFRESH_INTERVAL = 60000; // 60秒自動刷新
+
+        // 輔助函數：安全的日期格式化
+        function formatDate(timestamp) {
+            try {
+                if (!timestamp) return 'N/A';
+
+                // 處理不同格式的時間戳
+                let ts = timestamp;
+                // 如果是字符串，嘗試轉換為數字
+                if (typeof ts === 'string') {
+                    ts = parseInt(ts, 10);
+                }
+                // 如果是秒級時間戳，轉換為毫秒級
+                if (ts < 10000000000) {
+                    ts = ts * 1000;
+                }
+
+                const date = new Date(ts);
+
+                // 檢查日期是否有效
+                if (isNaN(date.getTime())) {
+                    console.warn('Invalid timestamp:', timestamp);
+                    return 'N/A';
+                }
+
+                return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+            } catch (e) {
+                console.error('Date formatting error for timestamp:', timestamp, e);
+                return 'N/A';
+            }
+        }
+
+        // 輔助函數：安全的數值格式化
+        function formatNumber(value, decimals = 2, asPercent = false) {
+            try {
+                if (value === null || value === undefined || isNaN(value)) {
+                    return 'N/A';
+                }
+
+                const num = parseFloat(value);
+
+                // 添加千位分隔符
+                const formatted = num.toLocaleString(undefined, {
+                    minimumFractionDigits: decimals,
+                    maximumFractionDigits: decimals
+                });
+
+                return asPercent ? formatted + '%' : formatted;
+            } catch (e) {
+                console.error('Number formatting error for value:', value, e);
+                return 'N/A';
+            }
+        }
+
+        // 輔助函數：更新最後更新時間
+        function updateLastUpdated(elementId) {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString();
+            document.getElementById(elementId).textContent = `最後更新: ${timeString}`;
+        }
+
+        // 頁面加載完成後執行
+        document.addEventListener('DOMContentLoaded', function () {
+            // 初始化導航事件
+            document.getElementById('nav-funding-stats').addEventListener('click', function (e) {
+                e.preventDefault();
+                switchView('funding-stats');
+            });
+
+            document.getElementById('nav-funding-ticker').addEventListener('click', function (e) {
+                e.preventDefault();
+                switchView('funding-ticker');
+            });
+
+            document.getElementById('nav-funding-book').addEventListener('click', function (e) {
+                e.preventDefault();
+                switchView('funding-book');
+            });
+
+            // 初始化貨幣選擇事件
+            document.getElementById('currency-select').addEventListener('change', loadCurrentViewData);
+
+            // 初始化限制選擇事件
+            document.getElementById('limit-select').addEventListener('change', loadCurrentViewData);
+
+            // 初始化刷新按鈕
+            document.getElementById('refresh-button').addEventListener('click', loadCurrentViewData);
+
+            // 加載初始數據
+            loadCurrentViewData();
+
+            // 啟動自動刷新
+            startAutoRefresh();
+        });
+
+        // 自動刷新功能
+        function startAutoRefresh() {
+            stopAutoRefresh(); // 先停止現有的刷新
+            autoRefreshInterval = setInterval(loadCurrentViewData, AUTO_REFRESH_INTERVAL);
+            console.log('自動刷新已啟動，間隔: ' + AUTO_REFRESH_INTERVAL / 1000 + ' 秒');
+        }
+
+        function stopAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+            }
+        }
+
+        // 切換視圖
+        function switchView(viewName) {
+            // 隱藏所有視圖
+            document.getElementById('funding-stats-view').style.display = 'none';
+            document.getElementById('funding-ticker-view').style.display = 'none';
+            document.getElementById('funding-book-view').style.display = 'none';
+
+            // 顯示選定的視圖
+            document.getElementById(viewName + '-view').style.display = 'block';
+
+            // 更新導航項目的活動狀態
+            document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
+            document.getElementById('nav-' + viewName).classList.add('active');
+
+            // 更新當前視圖
+            currentView = viewName;
+
+            // 顯示/隱藏限制選擇器（僅在資金統計視圖中顯示）
+            document.getElementById('limit-container').style.display =
+                viewName === 'funding-stats' ? 'block' : 'none';
+
+            // 加載數據
+            loadCurrentViewData();
+        }
+
+        // 加載當前視圖的數據
+        function loadCurrentViewData() {
+            const currency = document.getElementById('currency-select').value;
+
+            if (currentView === 'funding-stats') {
+                const limit = document.getElementById('limit-select').value;
+                loadFundingStats(currency, limit);
+            } else if (currentView === 'funding-ticker') {
+                loadFundingTicker(currency);
+            } else if (currentView === 'funding-book') {
+                loadFundingBook(currency);
+            }
+        }
+
+        // 加載資金統計數據
+        function loadFundingStats(currency, limit) {
+            // 顯示載入中狀態
+            document.getElementById('chart-loading').style.display = 'flex';
+            document.getElementById('funding-stats-table').innerHTML =
+                '<tr><td colspan="6" class="text-center">載入中...</td></tr>';
+
+            console.log(`正在載入 ${currency} 的資金統計數據，限制為 ${limit} 筆`);
+
+            fetch(`/api/funding-stats/${currency}?limit=${limit}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('收到資金統計數據:', data);
+
+                    // 隱藏載入中狀態
+                    document.getElementById('chart-loading').style.display = 'none';
+
+                    if (!data || data.length === 0) {
+                        document.getElementById('funding-stats-table').innerHTML =
+                            '<tr><td colspan="6" class="text-center">沒有找到數據</td></tr>';
+                        return;
+                    }
+
+                    // 檢查數據格式並適配
+                    // 檢查是否有小寫字段名
+                    if (data[0] && typeof data[0].mts !== 'undefined') {
+                        console.log('檢測到小寫字段名，進行適配');
+                        // 適配數據格式 - 將小寫字段名轉換為大寫
+                        data = data.map(item => ({
+                            MTS: item.mts,
+                            FRR: item.frr,
+                            AvgPeriod: item.avg_period,
+                            FundingAmount: item.funding_amount,
+                            FundingAmountUsed: item.funding_amount_used,
+                            FundingBelowThreshold: item.funding_below_threshold
+                        }));
+                    } else if (data[0] && typeof data[0].MTS === 'undefined') {
+                        console.error('數據格式錯誤，缺少 MTS 或 mts 欄位:', data[0]);
+                        document.getElementById('funding-stats-table').innerHTML =
+                            '<tr><td colspan="6" class="text-center text-danger">數據格式錯誤</td></tr>';
+                        return;
+                    }
+
+                    // 反轉數據以便按時間順序顯示（從舊到新）
+                    data.reverse();
+
+                    // 更新圖表和表格
+                    updateFRRChart(data);
+                    updateFundingStatsTable(data);
+
+                    // 更新最後更新時間
+                    updateLastUpdated('chart-last-updated');
+                })
+                .catch(error => {
+                    console.error('加載資金統計數據失敗:', error);
+                    document.getElementById('chart-loading').style.display = 'none';
+                    document.getElementById('funding-stats-table').innerHTML =
+                        `<tr><td colspan="6" class="text-center text-danger">載入失敗: ${error.message}</td></tr>`;
+                });
+        }
+
+        // 更新 FRR 圖表
+        function updateFRRChart(data) {
+            const ctx = document.getElementById('frr-chart').getContext('2d');
+
+            // 準備圖表數據
+            const chartData = data.map(item => {
+                const formattedDate = formatDate(item.MTS);
+                const frrValue = item.FRR !== null && item.FRR !== undefined ? item.FRR * 100 : null;
+
+                return {
+                    x: formattedDate,
+                    y: frrValue
+                };
+            }).filter(item => item.y !== null);
+
+            // 如果圖表已存在，則銷毀它
+            if (frrChart) {
+                frrChart.destroy();
+            }
+
+            // 創建新圖表
+            frrChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: 'FRR (%)',
+                        data: chartData,
+                        borderColor: 'rgb(75, 192, 192)',
+                        tension: 0.1,
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            title: {
+                                display: true,
+                                text: '利率 (%)'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: '時間'
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function (context) {
+                                    return `FRR: ${formatNumber(context.parsed.y, 4, true)}`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // 更新資金統計表格
+        function updateFundingStatsTable(data) {
+            const tableBody = document.getElementById('funding-stats-table');
+            tableBody.innerHTML = '';
+
+            if (!data || data.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="6" class="text-center">沒有數據</td></tr>';
+                return;
+            }
+
+            data.forEach(item => {
+                const row = document.createElement('tr');
+
+                // 格式化時間
+                const formattedDate = formatDate(item.MTS);
+
+                // 格式化 FRR 為百分比
+                const frr = formatNumber(item.FRR * 100, 4, true);
+
+                // 創建行內容
+                row.innerHTML = `
+                    <td>${formattedDate}</td>
+                    <td>${frr}</td>
+                    <td>${formatNumber(item.AvgPeriod, 2)}</td>
+                    <td>${formatNumber(item.FundingAmount, 2)}</td>
+                    <td>${formatNumber(item.FundingAmountUsed, 2)}</td>
+                    <td>${formatNumber(item.FundingBelowThreshold, 2)}</td>
+                `;
+
+                tableBody.appendChild(row);
+            });
+        }
+
+        // 加載資金行情數據
+        function loadFundingTicker(currency) {
+            // 顯示載入中狀態
+            document.getElementById('ticker-loading').style.display = 'block';
+            document.getElementById('ticker-error').style.display = 'none';
+            document.getElementById('funding-ticker-info').innerHTML = '';
+            document.getElementById('bid-info').innerHTML = '';
+            document.getElementById('ask-info').innerHTML = '';
+
+            fetch(`/api/funding-ticker/${currency}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // 隱藏載入中狀態
+                    document.getElementById('ticker-loading').style.display = 'none';
+
+                    if (!data) {
+                        throw new Error('沒有收到數據');
+                    }
+
+                    console.log('收到資金行情數據:', data);
+
+                    // 檢查數據是否為數組並且是否包含必要的元素
+                    if (Array.isArray(data)) {
+                        console.log('檢測到數組格式數據，進行適配');
+
+                        // 如果是數組格式，嘗試提取第一個元素
+                        if (data.length > 0) {
+                            const item = data[0];
+
+                            // 檢查是否為 Bitfinex 的標準資金行情格式
+                            // 典型的 Bitfinex 資金行情數組格式：
+                            // [SYMBOL, FRR, BID, BID_PERIOD, BID_SIZE, ASK, ASK_PERIOD, ASK_SIZE, DAILY_CHANGE, 
+                            // DAILY_CHANGE_PERC, LAST_PRICE, VOLUME, HIGH, LOW, FRR_AMOUNT_AVAILABLE]
+
+                            if (item.length >= 15) {
+                                data = {
+                                    Timestamp: Date.now(),
+                                    FRR: item[1],
+                                    Bid: item[2],
+                                    BidPeriod: item[3],
+                                    BidSize: item[4],
+                                    Ask: item[5],
+                                    AskPeriod: item[6],
+                                    AskSize: item[7],
+                                    DailyChange: item[8],
+                                    DailyChangePercent: item[9],
+                                    LastPrice: item[10],
+                                    Volume: item[11],
+                                    High: item[12],
+                                    Low: item[13],
+                                    FRRAmountAvailable: item[14]
+                                };
+                            } else {
+                                console.error('數組格式不符合預期:', item);
+                                throw new Error('數據格式不符合預期');
+                            }
+                        } else {
+                            throw new Error('收到空數組');
+                        }
+                    }
+                    // 檢查是否為對象格式但使用小寫字段名
+                    else if (typeof data === 'object') {
+                        // 檢查是否有小寫字段名
+                        if (data.frr !== undefined || data.bid !== undefined) {
+                            console.log('檢測到小寫字段名，進行適配');
+                            data = {
+                                Timestamp: data.timestamp || data.mts || Date.now(),
+                                FRR: data.frr,
+                                Bid: data.bid,
+                                BidPeriod: data.bid_period || data.bidPeriod,
+                                BidSize: data.bid_size || data.bidSize,
+                                Ask: data.ask,
+                                AskPeriod: data.ask_period || data.askPeriod,
+                                AskSize: data.ask_size || data.askSize,
+                                DailyChange: data.daily_change || data.dailyChange,
+                                DailyChangePercent: data.daily_change_perc || data.dailyChangePercent,
+                                LastPrice: data.last_price || data.lastPrice,
+                                Volume: data.volume,
+                                High: data.high,
+                                Low: data.low,
+                                FRRAmountAvailable: data.frr_amount_available || data.frrAmountAvailable
+                            };
+                        }
+                    }
+
+                    updateFundingTickerInfo(data);
+
+                    // 更新最後更新時間
+                    updateLastUpdated('ticker-last-updated');
+                })
+                .catch(error => {
+                    console.error('加載資金行情數據失敗:', error);
+                    document.getElementById('ticker-loading').style.display = 'none';
+                    document.getElementById('ticker-error').style.display = 'block';
+                    document.getElementById('ticker-error').textContent = `載入失敗: ${error.message}`;
+                });
+        }
+
+        // 更新資金行情信息
+        function updateFundingTickerInfo(data) {
+            const tickerInfo = document.getElementById('funding-ticker-info');
+            const bidInfo = document.getElementById('bid-info');
+            const askInfo = document.getElementById('ask-info');
+
+            // 檢查數據是否有效
+            if (!data || typeof data !== 'object') {
+                console.error('無效的資金行情數據:', data);
+                tickerInfo.innerHTML = '<tr><td colspan="2" class="text-center text-danger">無效的數據</td></tr>';
+                return;
+            }
+
+            // 格式化時間
+            const formattedDate = formatDate(data.Timestamp);
+
+            // 更新行情信息，添加額外的數據檢查
+            tickerInfo.innerHTML = `
+        <tr><th>更新時間</th><td>${formattedDate}</td></tr>
+        <tr><th>FRR</th><td>${data.FRR !== undefined ? formatNumber(data.FRR * 100, 4, true) : 'N/A'}</td></tr>
+        <tr><th>最後價格</th><td>${data.LastPrice !== undefined ? formatNumber(data.LastPrice * 100, 4, true) : 'N/A'}</td></tr>
+        <tr><th>24小時變化</th><td>${data.DailyChange !== undefined ? formatNumber(data.DailyChange * 100, 4, true) : 'N/A'}</td></tr>
+        <tr><th>24小時變化百分比</th><td>${data.DailyChangePercent !== undefined ? formatNumber(data.DailyChangePercent * 100, 2, true) : 'N/A'}</td></tr>
+        <tr><th>24小時最高</th><td>${data.High !== undefined ? formatNumber(data.High * 100, 4, true) : 'N/A'}</td></tr>
+        <tr><th>24小時最低</th><td>${data.Low !== undefined ? formatNumber(data.Low * 100, 4, true) : 'N/A'}</td></tr>
+        <tr><th>24小時成交量</th><td>${data.Volume !== undefined ? formatNumber(data.Volume, 2) : 'N/A'}</td></tr>
+        <tr><th>FRR可用金額</th><td>${data.FRRAmountAvailable !== undefined ? formatNumber(data.FRRAmountAvailable, 2) : 'N/A'}</td></tr>
+    `;
+
+            // 更新買入信息
+            bidInfo.innerHTML = `
+        <div class="fs-4 text-success">${data.Bid !== undefined ? formatNumber(data.Bid * 100, 4, true) : 'N/A'}</div>
+        <div>期限: ${data.BidPeriod !== undefined ? data.BidPeriod : 'N/A'} 天</div>
+        <div>數量: ${data.BidSize !== undefined ? formatNumber(data.BidSize, 2) : 'N/A'}</div>
+    `;
+
+            // 更新賣出信息
+            askInfo.innerHTML = `
+        <div class="fs-4 text-danger">${data.Ask !== undefined ? formatNumber(data.Ask * 100, 4, true) : 'N/A'}</div>
+        <div>期限: ${data.AskPeriod !== undefined ? data.AskPeriod : 'N/A'} 天</div>
+        <div>數量: ${data.AskSize !== undefined ? formatNumber(data.AskSize, 2) : 'N/A'}</div>
+    `;
+        }
+
+        // 加載資金訂單簿數據
+        function loadFundingBook(currency) {
+            // 顯示載入中狀態
+            document.getElementById('book-loading').style.display = 'block';
+            document.getElementById('book-error').style.display = 'none';
+            document.getElementById('bid-orders').innerHTML = '';
+            document.getElementById('ask-orders').innerHTML = '';
+
+            fetch(`/api/funding-book/${currency}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // 隱藏載入中狀態
+                    document.getElementById('book-loading').style.display = 'none';
+
+                    if (!data || data.length === 0) {
+                        throw new Error('沒有收到數據或數據為空');
+                    }
+
+                    console.log('收到資金訂單簿數據:', data);
+
+                    // 檢查並適配數據格式（小寫轉大寫）
+                    if (data[0] && typeof data[0].rate !== 'undefined') {
+                        console.log('檢測到小寫字段名，進行適配');
+                        data = data.map(item => ({
+                            Rate: item.rate,
+                            Period: item.period,
+                            Count: item.count,
+                            Amount: item.amount
+                        }));
+                    }
+
+                    // 分離買入和賣出訂單
+                    const bidOrders = data.filter(item => item.Amount > 0);
+                    const askOrders = data.filter(item => item.Amount < 0);
+
+                    // 更新訂單簿表格
+                    updateOrderBookTable('bid-orders', bidOrders);
+                    updateOrderBookTable('ask-orders', askOrders.map(item => ({ ...item, Amount: Math.abs(item.Amount) })));
+                    // 更新最後更新時間
+                    updateLastUpdated('book-last-updated');
+                })
+                .catch(error => {
+                    console.error('加載資金訂單簿數據失敗:', error);
+                    document.getElementById('book-loading').style.display = 'none';
+                    document.getElementById('book-error').style.display = 'block';
+                    document.getElementById('book-error').textContent = `載入失敗: ${error.message}`;
+                });
+        }
+
+        // 更新訂單簿表格
+        function updateOrderBookTable(tableId, orders) {
+            const tableBody = document.getElementById(tableId);
+            tableBody.innerHTML = '';
+
+            if (!orders || orders.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="4" class="text-center">沒有訂單</td></tr>';
+                return;
+            }
+
+            // 按利率排序（買入降序，賣出升序）
+            if (tableId === 'bid-orders') {
+                orders.sort((a, b) => b.Rate - a.Rate);
+            } else {
+                orders.sort((a, b) => a.Rate - b.Rate);
+            }
+
+            // 限制顯示前15個訂單
+            const displayOrders = orders.slice(0, 15);
+
+            let total = 0;
+
+            displayOrders.forEach(order => {
+                const row = document.createElement('tr');
+
+                // 累計總量
+                total += order.Amount;
+
+                // 創建行內容
+                row.innerHTML = `
+                    <td>${formatNumber(order.Rate * 100, 4, true)}</td>
+                    <td>${order.Period !== null && order.Period !== undefined ? order.Period : 'N/A'}</td>
+                    <td>${formatNumber(order.Amount, 2)}</td>
+                    <td>${formatNumber(total, 2)}</td>
+                `;
+
+                tableBody.appendChild(row);
+            });
+        }
+    </script>
+</body>
+
+</html>
