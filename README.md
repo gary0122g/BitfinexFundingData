@@ -16,6 +16,7 @@ The application focuses primarily on funding statistics, order books, and market
 - **Scheduled Data Collection**: Task scheduler for periodic data retrieval
 - **Persistent Storage**: SQLite database for storing all collected data
 - **Context-aware API Calls**: All API requests support context for proper cancellation and timeout handling
+- **Web Interface**: Browser-based dashboard for visualizing and monitoring data
 
 ## Project Structure
 
@@ -28,6 +29,9 @@ The application focuses primarily on funding statistics, order books, and market
   - `scheduler_impl.go`: Implementation of the task scheduler
 - `task/`: Task definitions for data collection
   - `task.go`: Specific task implementations
+- `web/`: Frontend interface components
+  - `templates/`: HTML templates for the web interface
+  - `static/`: CSS, JavaScript, and other static assets
 
 ## Usage
 
@@ -48,6 +52,23 @@ go mod tidy
 ```bash
 go run main.go
 ```
+
+4. Access the web interface
+```
+Open your browser and navigate to http://localhost:8080
+```
+
+### Web Interface
+
+The application includes a web-based dashboard accessible at `http://localhost:8080` when the application is running. The interface provides:
+
+- Real-time funding rate charts and statistics
+- Historical funding data visualization
+- Order book depth charts
+- Interactive data filtering and exploration
+- Market overview and monitoring panels
+
+![Dashboard Screenshot](docs/images/dashboard.png)
 
 ### Collecting Funding Statistics
 
@@ -112,6 +133,7 @@ The application stores data in a SQLite database with tables for:
 
 ## Future Improvements
 
+- Enhancing the web interface with additional visualization options
 - Adding REST API for accessing collected data
 - Adding support for WebSocket data collection
 
