@@ -113,9 +113,8 @@ The application stores data in a SQLite database with tables for:
 ## Future Improvements
 
 - Adding REST API for accessing collected data
-- Implementing data visualization tools
 - Adding support for WebSocket data collection
-- Expanding to additional exchanges
+
 
 ## License
 
