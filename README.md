@@ -68,7 +68,6 @@ The application includes a web-based dashboard accessible at `http://localhost:8
 - Interactive data filtering and exploration
 - Market overview and monitoring panels
 
-![Dashboard Screenshot](docs/images/dashboard.png)
 
 ### Collecting Funding Statistics
 
@@ -137,10 +136,6 @@ The application stores data in a SQLite database with tables for:
 - Adding REST API for accessing collected data
 - Adding support for WebSocket data collection
 
-
-## License
-
-[MIT License](LICENSE)
 
 ## Acknowledgments
 
