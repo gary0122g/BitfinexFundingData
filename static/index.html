@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bitfinex 資金數據查看器</title>
+    <title>Bitfinex 資金數據</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
@@ -75,6 +75,12 @@
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="#" id="nav-funding-trades-comparison">FRR 與成交利率比較</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" id="nav-funding-trades-distribution">成交利率分佈</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" id="nav-pdf-distribution">PDF 機率分佈</a>
                     </li>
                 </ul>
             </div>
@@ -265,7 +271,7 @@
                 <div class="col-md-12">
                     <div class="card">
                         <div class="card-header d-flex justify-content-between align-items-center">
-                            <h5 class="mb-0">FRR 與成交利率比較</h5>
+                            <h5 class="mb-0">FRR 與最新成交利率比較</h5>
                             <span id="comparison-last-updated" class="text-muted small"></span>
                         </div>
                         <div class="card-body">
@@ -312,6 +318,99 @@
                 </div>
             </div>
         </div>
+
+        <!-- 成交利率分佈視圖 -->
+        <div id="funding-trades-distribution-view" style="display: none;">
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">成交利率分佈 (按小時)</h5>
+                            <span id="distribution-last-updated" class="text-muted small"></span>
+                        </div>
+                        <div class="card-body">
+                            <div id="distribution-loading" class="text-center" style="display: none;">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">載入中...</span>
+                                </div>
+                            </div>
+                            <div id="distribution-error" class="error-message" style="display: none;"></div>
+                            <div class="chart-container">
+                                <canvas id="distribution-chart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row mt-4">
+                <div class="col-md-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>成交數據統計</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-striped table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>時間</th>
+                                            <th>平均利率</th>
+                                            <th>最高利率</th>
+                                            <th>最低利率</th>
+                                            <th>成交筆數</th>
+                                            <th>總成交金額</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="distribution-table-body">
+                                        <!-- 數據將通過 JavaScript 動態加載 -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PDF 機率分佈視圖 -->
+        <div id="pdf-distribution-view" style="display: none;">
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">成交利率 PDF 機率分佈</h5>
+                            <span id="pdf-last-updated" class="text-muted small"></span>
+                        </div>
+                        <div class="card-body">
+                            <div id="pdf-loading" class="text-center" style="display: none;">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">載入中...</span>
+                                </div>
+                            </div>
+                            <div id="pdf-error" class="error-message" style="display: none;"></div>
+                            <div class="chart-container">
+                                <canvas id="pdf-chart"></canvas>
+                            </div>
+                            <div class="controls mt-3">
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <div class="input-group">
+                                            <label class="input-group-text" for="bin-count">分箱數量</label>
+                                            <input type="number" class="form-control" id="bin-count" value="20" min="5"
+                                                max="100">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <button class="btn btn-primary" onclick="loadPDFDistribution()">更新圖表</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
@@ -321,8 +420,10 @@
         let currentView = 'funding-stats';
         let frrChart = null;
         let frrTradesChart = null;
+        let distributionChart = null;  // 添加分佈圖表變量
         let autoRefreshInterval = null;
         const AUTO_REFRESH_INTERVAL = 60000; // 60秒自動刷新
+        let pdfChart = null;
 
         // 輔助函數：安全的日期格式化
         function formatDate(timestamp) {
@@ -407,6 +508,16 @@
                 switchView('funding-trades-comparison');
             });
 
+            document.getElementById('nav-funding-trades-distribution').addEventListener('click', function (e) {
+                e.preventDefault();
+                switchView('funding-trades-distribution');
+            });
+
+            document.getElementById('nav-pdf-distribution').addEventListener('click', function (e) {
+                e.preventDefault();
+                switchView('pdf-distribution');
+            });
+
             // 初始化貨幣選擇事件
             document.getElementById('currency-select').addEventListener('change', loadCurrentViewData);
 
@@ -444,6 +555,8 @@
             document.getElementById('funding-ticker-view').style.display = 'none';
             document.getElementById('funding-book-view').style.display = 'none';
             document.getElementById('funding-trades-comparison-view').style.display = 'none';
+            document.getElementById('funding-trades-distribution-view').style.display = 'none';
+            document.getElementById('pdf-distribution-view').style.display = 'none';
 
             // 顯示選定的視圖
             document.getElementById(viewName + '-view').style.display = 'block';
@@ -476,6 +589,10 @@
                 loadFundingBook(currency);
             } else if (currentView === 'funding-trades-comparison') {
                 loadComparisonData();
+            } else if (currentView === 'funding-trades-distribution') {
+                loadDistributionData();
+            } else if (currentView === 'pdf-distribution') {
+                loadPDFDistribution();
             }
         }
 
@@ -883,21 +1000,24 @@
         }
 
         // 加載 FRR 數據
-        function loadFRRData(currency) {
+        function loadDistributionData() {
+            const currency = document.getElementById('currency-select').value;
             const limit = document.getElementById('limit-select').value;
 
             // 顯示載入中狀態
-            document.getElementById('frr-trades-chart').style.display = 'none';
-            const loadingDiv = document.createElement('div');
-            loadingDiv.className = 'loading-overlay';
-            loadingDiv.innerHTML = `
-                <div class="spinner-border text-primary" role="status">
-                    <span class="visually-hidden">載入中...</span>
-                </div>
-            `;
-            document.querySelector('#funding-frr-trades-view .chart-container').appendChild(loadingDiv);
+            document.getElementById('distribution-loading').style.display = 'block';
+            document.getElementById('distribution-error').style.display = 'none';
+            document.getElementById('distribution-table-body').innerHTML = '';
 
-            fetch(`/api/funding-stats/${currency}?limit=${limit}`)
+            // 確保 currency 以 'f' 開頭
+            const formattedCurrency = currency.startsWith('f') ? currency : `f${currency}`;
+
+            // 確保 limit 是有效的數字
+            const formattedLimit = parseInt(limit) || 24; // 默認值為 24 小時
+
+            console.log(`正在載入 ${formattedCurrency} 的成交利率分佈數據，限制為 ${formattedLimit} 小時`);
+
+            fetch(`/api/funding-trades-distribution/${formattedCurrency}?limit=${formattedLimit}`)
                 .then(response => {
                     if (!response.ok) {
                         throw new Error(`HTTP error! Status: ${response.status}`);
@@ -905,110 +1025,118 @@
                     return response.json();
                 })
                 .then(data => {
-                    // 移除載入中狀態
-                    document.querySelector('#funding-frr-trades-view .loading-overlay').remove();
-                    document.getElementById('frr-trades-chart').style.display = 'block';
+                    // 隱藏載入中狀態
+                    document.getElementById('distribution-loading').style.display = 'none';
 
                     if (!data || data.length === 0) {
                         throw new Error('沒有收到數據或數據為空');
                     }
 
-                    console.log('收到 FRR 數據:', data);
-
-                    // 檢查並適配數據格式
-                    if (data[0] && typeof data[0].mts !== 'undefined') {
-                        console.log('檢測到小寫字段名，進行適配');
-                        data = data.map(item => ({
-                            MTS: item.mts,
-                            FRR: item.frr
-                        }));
-                    }
-
-                    // 更新圖表
-                    updateFRRTradesChart(data);
-
-                    // 更新最後更新時間
-                    updateLastUpdated('frr-trades-last-updated');
-                })
-                .catch(error => {
-                    console.error('加載 FRR 數據失敗:', error);
-                    document.querySelector('#funding-frr-trades-view .loading-overlay').remove();
-                    document.getElementById('frr-trades-chart').style.display = 'block';
-                    const errorDiv = document.createElement('div');
-                    errorDiv.className = 'error-message';
-                    errorDiv.textContent = `載入失敗: ${error.message}`;
-                    document.querySelector('#funding-frr-trades-view .card-body').appendChild(errorDiv);
-                });
-        }
-
-        // 加載成交數據
-        function loadTradesData(currency) {
-            const tableBody = document.getElementById('frr-trades-table-body');
-            tableBody.innerHTML = '<tr><td colspan="7" class="text-center">載入中...</td></tr>';
-
-            fetch(`/api/funding-trades/${currency}`)
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! Status: ${response.status}`);
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    if (!data || data.length === 0) {
-                        throw new Error('沒有收到數據或數據為空');
-                    }
-
-                    console.log('收到成交數據:', data);
-
-                    // 檢查並適配數據格式
-                    if (data[0] && typeof data[0].mts !== 'undefined') {
-                        console.log('檢測到小寫字段名，進行適配');
-                        data = data.map(item => ({
-                            MTS: item.mts,
-                            Rate: item.rate,
-                            FRR: item.frr,
-                            Amount: item.amount,
-                            Period: item.period
-                        }));
-                    }
+                    console.log('收到成交利率分佈數據:', data);
 
                     // 更新表格
-                    updateTradesTable(data);
+                    updateDistributionTable(data);
 
                     // 更新最後更新時間
-                    updateLastUpdated('frr-trades-last-updated');
+                    updateLastUpdated('distribution-last-updated');
                 })
                 .catch(error => {
-                    console.error('加載成交數據失敗:', error);
-                    tableBody.innerHTML = `<tr><td colspan="7" class="text-center text-danger">載入失敗: ${error.message}</td></tr>`;
+                    console.error('加載成交利率分佈數據失敗:', error);
+                    document.getElementById('distribution-loading').style.display = 'none';
+                    document.getElementById('distribution-error').style.display = 'block';
+                    document.getElementById('distribution-error').textContent = `載入失敗: ${error.message}`;
                 });
         }
 
-        // 更新 FRR 圖表
-        function updateFRRTradesChart(data) {
-            const ctx = document.getElementById('frr-trades-chart').getContext('2d');
+        // 更新 FRR 數據表格
+        function updateDistributionTable(data) {
+            const tableBody = document.getElementById('distribution-table-body');
+            tableBody.innerHTML = '';
 
-            // 準備圖表數據
-            const labels = data.map(item => formatDate(item.MTS));
-            const frrData = data.map(item => item.FRR * 100);
+            if (!data || data.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="6" class="text-center">沒有數據</td></tr>';
+                return;
+            }
+
+            // 反轉數據順序，確保表格從上到下顯示（新到舊）
+            const reversedData = [...data].reverse();
+
+            reversedData.forEach(item => {
+                const row = document.createElement('tr');
+
+                // 將利率轉換為 APR
+                const avgRate = item.avg_rate * 365;
+                const maxRate = item.max_rate * 365;
+                const minRate = item.min_rate * 365;
+
+                // 創建行內容
+                row.innerHTML = `
+                    <td>${item.hour}</td>
+                    <td>${formatNumber(avgRate, 2, true)}</td>
+                    <td>${formatNumber(maxRate, 2, true)}</td>
+                    <td>${formatNumber(minRate, 2, true)}</td>
+                    <td>${formatNumber(item.trade_count, 0)}</td>
+                    <td>${formatNumber(item.total_amount, 2)}</td>
+                `;
+
+                tableBody.appendChild(row);
+            });
+
+            // 更新圖表
+            updateDistributionChart(data);
+        }
+
+        // 更新分佈圖表
+        function updateDistributionChart(data) {
+            const ctx = document.getElementById('distribution-chart').getContext('2d');
+
+            // 反轉數據順序，確保時間軸從左到右（舊到新）
+            const reversedData = [...data].reverse();
+
+            // 準備圖表數據，將利率轉換為 APR
+            const labels = reversedData.map(item => item.hour);
+            const avgRates = reversedData.map(item => item.avg_rate * 365);
+            const maxRates = reversedData.map(item => item.max_rate * 365);
+            const minRates = reversedData.map(item => item.min_rate * 365);
 
             // 如果圖表已存在，則銷毀它
-            if (frrTradesChart) {
-                frrTradesChart.destroy();
+            if (distributionChart) {
+                distributionChart.destroy();
             }
 
             // 創建新圖表
-            frrTradesChart = new Chart(ctx, {
+            distributionChart = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: labels,
-                    datasets: [{
-                        label: 'FRR (%)',
-                        data: frrData,
-                        borderColor: 'rgb(75, 192, 192)',
-                        tension: 0.1,
-                        fill: false
-                    }]
+                    datasets: [
+                        {
+                            label: '平均利率 (APR)',
+                            data: avgRates,
+                            borderColor: 'rgb(75, 192, 192)',
+                            backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                            tension: 0.1,
+                            fill: true
+                        },
+                        {
+                            label: '最高利率 (APR)',
+                            data: maxRates,
+                            borderColor: 'rgb(255, 99, 132)',
+                            backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                            tension: 0.1,
+                            fill: false,
+                            borderDash: [5, 5]
+                        },
+                        {
+                            label: '最低利率 (APR)',
+                            data: minRates,
+                            borderColor: 'rgb(54, 162, 235)',
+                            backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                            tension: 0.1,
+                            fill: false,
+                            borderDash: [5, 5]
+                        }
+                    ]
                 },
                 options: {
                     responsive: true,
@@ -1018,7 +1146,7 @@
                             beginAtZero: false,
                             title: {
                                 display: true,
-                                text: '利率 (%)'
+                                text: '利率 (APR %)'
                             }
                         },
                         x: {
@@ -1032,7 +1160,7 @@
                         tooltip: {
                             callbacks: {
                                 label: function (context) {
-                                    return `FRR: ${formatNumber(context.parsed.y, 4, true)}`;
+                                    return `${context.dataset.label}: ${formatNumber(context.parsed.y, 2, true)}`;
                                 }
                             }
                         }
@@ -1041,41 +1169,147 @@
             });
         }
 
-        // 更新成交表格
-        function updateTradesTable(trades) {
-            const tableBody = document.getElementById('frr-trades-table-body');
-            tableBody.innerHTML = '';
+        function switchTab(tabName) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.style.display = 'none';
+            });
 
-            if (!trades || trades.length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="7" class="text-center">沒有數據</td></tr>';
-                return;
+            // Deactivate all tab buttons
+            document.querySelectorAll('.tab-button').forEach(button => {
+                button.classList.remove('active');
+            });
+
+            // Show selected tab content
+            document.getElementById(tabName).style.display = 'block';
+
+            // Activate selected tab button
+            document.querySelector(`.tab-button[onclick="switchTab('${tabName}')"]`).classList.add('active');
+
+            // Load data for the selected tab
+            if (tabName === 'funding-book') {
+                loadFundingBook();
+            } else if (tabName === 'trading-book') {
+                loadTradingBook();
+            } else if (tabName === 'funding-trades') {
+                loadFundingTrades();
+            } else if (tabName === 'distribution') {
+                loadDistributionData();
+            } else if (tabName === 'pdf-distribution') {
+                loadPDFDistribution();
+            }
+        }
+
+        function loadPDFDistribution() {
+            const currency = document.getElementById('currency-select').value;
+            const formattedCurrency = currency.startsWith('f') ? currency : 'f' + currency;
+
+            // 顯示載入中狀態
+            document.getElementById('pdf-loading').style.display = 'block';
+            document.getElementById('pdf-error').style.display = 'none';
+
+            // 使用正確的 API 端點
+            fetch(`/api/ws-funding-trades/${formattedCurrency}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // 隱藏載入中狀態
+                    document.getElementById('pdf-loading').style.display = 'none';
+
+                    if (!data || data.length === 0) {
+                        throw new Error('沒有收到數據或數據為空');
+                    }
+
+                    // 將數據轉換為適合繪製 PDF 的格式
+                    const rates = data.map(trade => trade.rate * 365 * 100); // 轉換為 APR
+                    updatePDFChartWithRates(rates);
+                    updateLastUpdated('pdf-last-updated');
+                })
+                .catch(error => {
+                    console.error('加載 PDF 分佈數據失敗:', error);
+                    document.getElementById('pdf-loading').style.display = 'none';
+                    document.getElementById('pdf-error').style.display = 'block';
+                    document.getElementById('pdf-error').textContent = `載入失敗: ${error.message}`;
+                });
+        }
+
+        function updatePDFChartWithRates(rates) {
+            const binCount = parseInt(document.getElementById('bin-count').value);
+
+            // Calculate histogram
+            const minRate = Math.min(...rates);
+            const maxRate = Math.max(...rates);
+            const binWidth = (maxRate - minRate) / binCount;
+
+            const bins = Array(binCount).fill(0);
+            const labels = [];
+
+            for (let i = 0; i < binCount; i++) {
+                const binStart = minRate + i * binWidth;
+                const binEnd = binStart + binWidth;
+                labels.push(`${binStart.toFixed(2)}%`);
+
+                for (const rate of rates) {
+                    if (rate >= binStart && rate < binEnd) {
+                        bins[i]++;
+                    }
+                }
             }
 
-            trades.forEach(trade => {
-                const row = document.createElement('tr');
+            // Normalize to get PDF
+            const total = bins.reduce((sum, count) => sum + count, 0);
+            const pdf = bins.map(count => count / total);
 
-                // 計算偏離值
-                const deviation = trade.Rate - trade.FRR;
-                const deviationPercent = (deviation / trade.FRR) * 100;
+            const ctx = document.getElementById('pdf-chart').getContext('2d');
 
-                // 設置行樣式（根據偏離值）
-                if (deviation > 0) {
-                    row.classList.add('table-success');
-                } else if (deviation < 0) {
-                    row.classList.add('table-danger');
+            if (pdfChart) {
+                pdfChart.destroy();
+            }
+
+            pdfChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '機率密度',
+                        data: pdf,
+                        backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: '機率密度'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: '利率 (APR %)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function (context) {
+                                    return `機率: ${(context.raw * 100).toFixed(2)}%`;
+                                }
+                            }
+                        }
+                    }
                 }
-
-                row.innerHTML = `
-                    <td>${formatDate(trade.MTS)}</td>
-                    <td>${formatNumber(trade.Rate * 100, 4, true)}</td>
-                    <td>${formatNumber(trade.FRR * 100, 4, true)}</td>
-                    <td>${formatNumber(deviation * 100, 4, true)}</td>
-                    <td>${formatNumber(deviationPercent, 2, true)}</td>
-                    <td>${formatNumber(trade.Amount, 2)}</td>
-                    <td>${trade.Period}</td>
-                `;
-
-                tableBody.appendChild(row);
             });
         }
     </script>

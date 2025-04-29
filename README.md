@@ -203,8 +203,7 @@ The application stores data in a SQLite database with tables for:
 ## Future Improvements
 
 - Enhancing the web interface with additional visualization options
-- Adding REST API for accessing collected data
-- Adding support for WebSocket data collection
+
 
 
 ## Acknowledgments

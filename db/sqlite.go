@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/gary0122g/BitfinexFundingData/api"
@@ -714,4 +715,58 @@ func (d *Database) GetHistoricalWSFundingTrades(currency string, startTime, endT
 	}
 
 	return trades, nil
+}
+
+// FundingTradeDistribution represents the distribution of funding trades for a given hour
+type FundingTradeDistribution struct {
+	Hour        string  `json:"hour"`
+	AvgRate     float64 `json:"avg_rate"`
+	MaxRate     float64 `json:"max_rate"`
+	MinRate     float64 `json:"min_rate"`
+	TradeCount  int     `json:"trade_count"`
+	TotalAmount float64 `json:"total_amount"`
+}
+
+// GetFundingTradesDistribution retrieves the distribution of funding trades by hour
+func (db *Database) GetFundingTradesDistribution(currency string, limit int) ([]FundingTradeDistribution, error) {
+	query := `
+		SELECT 
+			strftime('%Y-%m-%d %H:00:00', datetime(timestamp/1000, 'unixepoch', 'localtime')) as hour,
+			AVG(rate) as avg_rate,
+			MAX(rate) as max_rate,
+			MIN(rate) as min_rate,
+			COUNT(*) as trade_count,
+			SUM(amount) as total_amount
+		FROM ws_funding_trades
+		WHERE currency = ?
+		GROUP BY hour
+		ORDER BY hour DESC
+		LIMIT ?
+	`
+
+	rows, err := db.db.Query(query, currency, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query funding trades distribution: %v", err)
+	}
+	defer rows.Close()
+
+	var distributions []FundingTradeDistribution
+	for rows.Next() {
+		var d FundingTradeDistribution
+		err := rows.Scan(&d.Hour, &d.AvgRate, &d.MaxRate, &d.MinRate, &d.TradeCount, &d.TotalAmount)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan funding trade distribution row: %v", err)
+		}
+		// Convert rates from decimal to percentage
+		d.AvgRate *= 100
+		d.MaxRate *= 100
+		d.MinRate *= 100
+		distributions = append(distributions, d)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating funding trade distribution rows: %v", err)
+	}
+
+	return distributions, nil
 }

@@ -51,6 +51,12 @@ func (s *APIServer) routes() {
 
 	// Funding Trades Comparison API
 	api.HandleFunc("/funding-trades-comparison/{currency}", s.handleGetFundingTradesComparison).Methods("GET")
+
+	// Funding Trades Distribution API
+	api.HandleFunc("/funding-trades-distribution/{currency}", s.handleGetFundingTradesDistribution).Methods("GET")
+
+	// All WebSocket Funding Trades API
+	api.HandleFunc("/ws-funding-trades/{currency}", s.handleGetAllWSFundingTrades).Methods("GET")
 }
 
 // Start launches the API server
@@ -197,4 +203,55 @@ func (s *APIServer) handleGetFundingTradesComparison(w http.ResponseWriter, r *h
 	// Return JSON response
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+// handleGetFundingTradesDistribution processes requests for funding trades distribution data
+func (s *APIServer) handleGetFundingTradesDistribution(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	currency := vars["currency"]
+	if !strings.HasPrefix(currency, "f") {
+		currency = "f" + currency
+	}
+
+	limit := 10000 // Default to 24 hours
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		parsedLimit, err := strconv.Atoi(limitStr)
+		if err != nil {
+			http.Error(w, "Invalid limit parameter", http.StatusBadRequest)
+			return
+		}
+		limit = parsedLimit
+	}
+
+	distributions, err := s.database.GetFundingTradesDistribution(currency, limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(distributions)
+}
+
+// handleGetAllWSFundingTrades processes requests for all WebSocket funding trades data
+func (s *APIServer) handleGetAllWSFundingTrades(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	currency := vars["currency"]
+	if !strings.HasPrefix(currency, "f") {
+		currency = "f" + currency
+	}
+
+	// 使用一個很早的開始時間來獲取所有數據
+	startTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	endTime := time.Now()
+
+	// 使用一個很大的 limit 值
+	trades, err := s.database.GetHistoricalWSFundingTrades(currency, startTime, endTime, 1000000)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to retrieve funding trades: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(trades)
 }
