@@ -1,0 +1,44 @@
+<div id="funding-stats-view" class="view">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">資金統計</h5>
+                    <span id="funding-stats-last-updated" class="text-muted small"></span>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>時間</th>
+                                    <th>利率</th>
+                                    <th>期限</th>
+                                    <th>數量</th>
+                                    <th>FRR</th>
+                                </tr>
+                            </thead>
+                            <tbody id="funding-stats-table-body">
+                                <!-- 數據將通過 JavaScript 動態加載 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">利率趨勢圖</h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="funding-stats-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

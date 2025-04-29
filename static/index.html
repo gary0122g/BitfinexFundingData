@@ -7,6 +7,7 @@
     <title>Bitfinex 資金數據查看器</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <style>
         .card {
             margin-bottom: 20px;
@@ -71,6 +72,9 @@
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="#" id="nav-funding-book">資金訂單簿</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" id="nav-funding-trades-comparison">FRR 與成交利率比較</a>
                     </li>
                 </ul>
             </div>
@@ -254,13 +258,69 @@
                 </div>
             </div>
         </div>
+
+        <!-- FRR 與成交利率比較視圖 -->
+        <div id="funding-trades-comparison-view" style="display: none;">
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">FRR 與成交利率比較</h5>
+                            <span id="comparison-last-updated" class="text-muted small"></span>
+                        </div>
+                        <div class="card-body">
+                            <div id="comparison-loading" class="text-center" style="display: none;">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">載入中...</span>
+                                </div>
+                            </div>
+                            <div id="comparison-error" class="error-message" style="display: none;"></div>
+                            <div class="chart-container">
+                                <canvas id="comparison-chart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row mt-4">
+                <div class="col-md-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>成交數據</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-striped table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>時間</th>
+                                            <th>成交利率 (APR)</th>
+                                            <th>FRR (APR)</th>
+                                            <th>偏離值</th>
+                                            <th>偏離百分比</th>
+                                            <th>數量</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="comparison-table-body">
+                                        <!-- 數據將通過 JavaScript 動態加載 -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/js/funding-trades-comparison.js"></script>
     <script>
         // 全局變量
         let currentView = 'funding-stats';
         let frrChart = null;
+        let frrTradesChart = null;
         let autoRefreshInterval = null;
         const AUTO_REFRESH_INTERVAL = 60000; // 60秒自動刷新
 
@@ -342,6 +402,11 @@
                 switchView('funding-book');
             });
 
+            document.getElementById('nav-funding-trades-comparison').addEventListener('click', function (e) {
+                e.preventDefault();
+                switchView('funding-trades-comparison');
+            });
+
             // 初始化貨幣選擇事件
             document.getElementById('currency-select').addEventListener('change', loadCurrentViewData);
 
@@ -378,6 +443,7 @@
             document.getElementById('funding-stats-view').style.display = 'none';
             document.getElementById('funding-ticker-view').style.display = 'none';
             document.getElementById('funding-book-view').style.display = 'none';
+            document.getElementById('funding-trades-comparison-view').style.display = 'none';
 
             // 顯示選定的視圖
             document.getElementById(viewName + '-view').style.display = 'block';
@@ -408,6 +474,8 @@
                 loadFundingTicker(currency);
             } else if (currentView === 'funding-book') {
                 loadFundingBook(currency);
+            } else if (currentView === 'funding-trades-comparison') {
+                loadComparisonData();
             }
         }
 
@@ -808,6 +876,203 @@
                     <td>${order.Period !== null && order.Period !== undefined ? order.Period : 'N/A'}</td>
                     <td>${formatNumber(order.Amount, 2)}</td>
                     <td>${formatNumber(total, 2)}</td>
+                `;
+
+                tableBody.appendChild(row);
+            });
+        }
+
+        // 加載 FRR 數據
+        function loadFRRData(currency) {
+            const limit = document.getElementById('limit-select').value;
+
+            // 顯示載入中狀態
+            document.getElementById('frr-trades-chart').style.display = 'none';
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'loading-overlay';
+            loadingDiv.innerHTML = `
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">載入中...</span>
+                </div>
+            `;
+            document.querySelector('#funding-frr-trades-view .chart-container').appendChild(loadingDiv);
+
+            fetch(`/api/funding-stats/${currency}?limit=${limit}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // 移除載入中狀態
+                    document.querySelector('#funding-frr-trades-view .loading-overlay').remove();
+                    document.getElementById('frr-trades-chart').style.display = 'block';
+
+                    if (!data || data.length === 0) {
+                        throw new Error('沒有收到數據或數據為空');
+                    }
+
+                    console.log('收到 FRR 數據:', data);
+
+                    // 檢查並適配數據格式
+                    if (data[0] && typeof data[0].mts !== 'undefined') {
+                        console.log('檢測到小寫字段名，進行適配');
+                        data = data.map(item => ({
+                            MTS: item.mts,
+                            FRR: item.frr
+                        }));
+                    }
+
+                    // 更新圖表
+                    updateFRRTradesChart(data);
+
+                    // 更新最後更新時間
+                    updateLastUpdated('frr-trades-last-updated');
+                })
+                .catch(error => {
+                    console.error('加載 FRR 數據失敗:', error);
+                    document.querySelector('#funding-frr-trades-view .loading-overlay').remove();
+                    document.getElementById('frr-trades-chart').style.display = 'block';
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'error-message';
+                    errorDiv.textContent = `載入失敗: ${error.message}`;
+                    document.querySelector('#funding-frr-trades-view .card-body').appendChild(errorDiv);
+                });
+        }
+
+        // 加載成交數據
+        function loadTradesData(currency) {
+            const tableBody = document.getElementById('frr-trades-table-body');
+            tableBody.innerHTML = '<tr><td colspan="7" class="text-center">載入中...</td></tr>';
+
+            fetch(`/api/funding-trades/${currency}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (!data || data.length === 0) {
+                        throw new Error('沒有收到數據或數據為空');
+                    }
+
+                    console.log('收到成交數據:', data);
+
+                    // 檢查並適配數據格式
+                    if (data[0] && typeof data[0].mts !== 'undefined') {
+                        console.log('檢測到小寫字段名，進行適配');
+                        data = data.map(item => ({
+                            MTS: item.mts,
+                            Rate: item.rate,
+                            FRR: item.frr,
+                            Amount: item.amount,
+                            Period: item.period
+                        }));
+                    }
+
+                    // 更新表格
+                    updateTradesTable(data);
+
+                    // 更新最後更新時間
+                    updateLastUpdated('frr-trades-last-updated');
+                })
+                .catch(error => {
+                    console.error('加載成交數據失敗:', error);
+                    tableBody.innerHTML = `<tr><td colspan="7" class="text-center text-danger">載入失敗: ${error.message}</td></tr>`;
+                });
+        }
+
+        // 更新 FRR 圖表
+        function updateFRRTradesChart(data) {
+            const ctx = document.getElementById('frr-trades-chart').getContext('2d');
+
+            // 準備圖表數據
+            const labels = data.map(item => formatDate(item.MTS));
+            const frrData = data.map(item => item.FRR * 100);
+
+            // 如果圖表已存在，則銷毀它
+            if (frrTradesChart) {
+                frrTradesChart.destroy();
+            }
+
+            // 創建新圖表
+            frrTradesChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'FRR (%)',
+                        data: frrData,
+                        borderColor: 'rgb(75, 192, 192)',
+                        tension: 0.1,
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            title: {
+                                display: true,
+                                text: '利率 (%)'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: '時間'
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function (context) {
+                                    return `FRR: ${formatNumber(context.parsed.y, 4, true)}`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // 更新成交表格
+        function updateTradesTable(trades) {
+            const tableBody = document.getElementById('frr-trades-table-body');
+            tableBody.innerHTML = '';
+
+            if (!trades || trades.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="7" class="text-center">沒有數據</td></tr>';
+                return;
+            }
+
+            trades.forEach(trade => {
+                const row = document.createElement('tr');
+
+                // 計算偏離值
+                const deviation = trade.Rate - trade.FRR;
+                const deviationPercent = (deviation / trade.FRR) * 100;
+
+                // 設置行樣式（根據偏離值）
+                if (deviation > 0) {
+                    row.classList.add('table-success');
+                } else if (deviation < 0) {
+                    row.classList.add('table-danger');
+                }
+
+                row.innerHTML = `
+                    <td>${formatDate(trade.MTS)}</td>
+                    <td>${formatNumber(trade.Rate * 100, 4, true)}</td>
+                    <td>${formatNumber(trade.FRR * 100, 4, true)}</td>
+                    <td>${formatNumber(deviation * 100, 4, true)}</td>
+                    <td>${formatNumber(deviationPercent, 2, true)}</td>
+                    <td>${formatNumber(trade.Amount, 2)}</td>
+                    <td>${trade.Period}</td>
                 `;
 
                 tableBody.appendChild(row);

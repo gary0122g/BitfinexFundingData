@@ -141,6 +141,22 @@ func CreateTables(db *sql.DB) error {
 		UNIQUE(symbol, timestamp)
 	);
 	CREATE INDEX IF NOT EXISTS idx_trading_ticker_symbol_timestamp ON trading_ticker(symbol, timestamp);
+
+	-- WebSocket Funding Trades table
+	CREATE TABLE IF NOT EXISTS ws_funding_trades (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		trade_id INTEGER NOT NULL,
+		currency TEXT NOT NULL,
+		timestamp INTEGER NOT NULL,
+		amount REAL NOT NULL,
+		rate REAL NOT NULL,
+		period INTEGER NOT NULL,
+		msg_type TEXT NOT NULL, -- 'fte' for trade executed, 'ftu' for trade updated
+		created_at INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
+		UNIQUE(trade_id, msg_type)
+	);
+	CREATE INDEX IF NOT EXISTS idx_ws_funding_trades_currency_timestamp ON ws_funding_trades(currency, timestamp);
+	CREATE INDEX IF NOT EXISTS idx_ws_funding_trades_trade_id ON ws_funding_trades(trade_id);
 	`
 
 	_, err := db.Exec(createTableSQL)

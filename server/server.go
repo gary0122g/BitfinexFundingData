@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gary0122g/BitfinexFundingData/db"
 	"github.com/gorilla/mux"
@@ -47,6 +48,9 @@ func (s *APIServer) routes() {
 	// FundingBook API
 	api.HandleFunc("/funding-book/{currency}", s.handleGetFundingBook).Methods("GET")
 	api.HandleFunc("/raw-funding-book/{currency}", s.handleGetRawFundingBook).Methods("GET")
+
+	// Funding Trades Comparison API
+	api.HandleFunc("/funding-trades-comparison/{currency}", s.handleGetFundingTradesComparison).Methods("GET")
 }
 
 // Start launches the API server
@@ -148,4 +152,49 @@ func (s *APIServer) handleGetRawFundingBook(w http.ResponseWriter, r *http.Reque
 	// Return JSON response
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(rawBooks)
+}
+
+// handleGetFundingTradesComparison processes requests for funding trades comparison data
+func (s *APIServer) handleGetFundingTradesComparison(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	currency := vars["currency"]
+	if !strings.HasPrefix(currency, "f") {
+		currency = "f" + currency
+	}
+
+	// Get query parameters
+	limitStr := r.URL.Query().Get("limit")
+	limit := 100 // Default limit
+	if limitStr != "" {
+		parsedLimit, err := strconv.Atoi(limitStr)
+		if err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
+	// Get funding stats data
+	stats, err := s.database.GetFundingStats(currency, limit)
+	if err != nil {
+		http.Error(w, "Failed to retrieve funding statistics: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Get historical funding trades data
+	startTime := time.Now().Add(-24 * time.Hour) // Last 24 hours
+	endTime := time.Now()
+	trades, err := s.database.GetHistoricalWSFundingTrades(currency, startTime, endTime, limit)
+	if err != nil {
+		http.Error(w, "Failed to retrieve funding trades: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Combine and format the data
+	response := map[string]interface{}{
+		"stats":  stats,
+		"trades": trades,
+	}
+
+	// Return JSON response
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }

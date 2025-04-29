@@ -13,6 +13,7 @@ The application focuses primarily on funding statistics, order books, and market
 - **Funding Statistics**: Collect and store historical funding rate statistics for various currencies
 - **Order Books**: Retrieve both aggregated and raw order books for funding and trading
 - **Market Tickers**: Monitor real-time and historical ticker data for trading pairs and funding currencies
+- **Real-time Funding Trades**: WebSocket connection for live funding trade updates
 - **Scheduled Data Collection**: Task scheduler for periodic data retrieval
 - **Persistent Storage**: SQLite database for storing all collected data
 - **Context-aware API Calls**: All API requests support context for proper cancellation and timeout handling
@@ -67,7 +68,76 @@ The application includes a web-based dashboard accessible at `http://localhost:8
 - Order book depth charts
 - Interactive data filtering and exploration
 - Market overview and monitoring panels
+- Real-time funding trade updates
 
+#### Available Views
+
+1. **Funding Statistics View**
+   - Displays historical funding rate (FRR) trends
+   - Shows detailed statistics including average period, funding amount, and usage
+   - Interactive chart for visualizing rate changes over time
+   - Filterable by currency and time range
+
+2. **Funding Ticker View**
+   - Real-time funding market overview
+   - Current FRR, best bid/ask rates and sizes
+   - 24-hour price changes and volume
+   - Available funding amounts
+
+3. **Funding Order Book View**
+   - Live order book for funding markets
+   - Separate views for offers (lending) and bids (borrowing)
+   - Order depth visualization
+   - Real-time updates of market depth
+
+4. **FRR vs Trade Rate Comparison View**
+   - Compares FRR with actual trade rates
+   - Visualizes rate deviations
+   - Historical trade data analysis
+   - Interactive filtering and time range selection
+
+### Real-time Funding Trades
+
+The application maintains a WebSocket connection to Bitfinex to receive real-time funding trade updates. This feature:
+
+- Automatically reconnects on connection loss
+- Maintains subscription state
+- Handles trade messages and subscription responses
+- Stores trades in the database for historical analysis
+
+Example usage:
+
+```go
+// Create a new WebSocket client
+wsClient := api.NewWebSocketClient()
+
+// Connect to Bitfinex WebSocket
+if err := wsClient.Connect(); err != nil {
+    log.Printf("Failed to connect: %v", err)
+    return
+}
+defer wsClient.Close()
+
+// Subscribe to funding trades for a specific currency
+if err := wsClient.SubscribeToFundingTrades("fUSD"); err != nil {
+    log.Printf("Failed to subscribe: %v", err)
+    return
+}
+
+// Handle incoming trades
+wsClient.HandleFundingTrades(func(trade api.FundingTrade, msgType string) error {
+    // Process the trade
+    log.Printf("Received trade: %+v", trade)
+    return nil
+})
+```
+
+The WebSocket client includes:
+- Automatic reconnection with configurable retry attempts
+- Thread-safe operations
+- Graceful shutdown handling
+- Error handling and logging
+- State tracking for connection and subscription status
 
 ### Collecting Funding Statistics
 

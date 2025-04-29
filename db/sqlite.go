@@ -47,6 +47,11 @@ type Storage interface {
 	SaveFundingTicker(currency string, ticker api.FundingTicker) (int64, error)
 	GetLatestFundingTicker(currency string) (api.FundingTicker, error)
 	GetHistoricalFundingTickers(currency string, startTime, endTime time.Time, limit int) ([]api.FundingTicker, error)
+
+	// WebSocket Funding Trades related methods
+	SaveWSFundingTrade(currency string, trade api.FundingTrade, msgType string) (int64, error)
+	GetLatestWSFundingTrades(currency string, limit int) ([]api.FundingTrade, error)
+	GetHistoricalWSFundingTrades(currency string, startTime, endTime time.Time, limit int) ([]api.FundingTrade, error)
 }
 
 // SaveFundingStats saves FundingStats data to the database
@@ -611,4 +616,102 @@ func (d *Database) GetLatestRawFundingBook(currency string) ([]api.RawFundingBoo
 	}
 
 	return books, nil
+}
+
+// SaveWSFundingTrade saves a WebSocket funding trade to the database
+func (d *Database) SaveWSFundingTrade(currency string, trade api.FundingTrade, msgType string) (int64, error) {
+	query := `
+	INSERT INTO ws_funding_trades 
+	(trade_id, currency, timestamp, amount, rate, period, msg_type)
+	VALUES (?, ?, ?, ?, ?, ?, ?)`
+
+	result, err := d.db.Exec(
+		query,
+		trade.ID,
+		currency,
+		trade.MTS,
+		trade.Amount,
+		trade.Rate,
+		trade.Period,
+		msgType,
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	return result.LastInsertId()
+}
+
+// GetLatestWSFundingTrades retrieves the latest WebSocket funding trades for the specified currency
+func (d *Database) GetLatestWSFundingTrades(currency string, limit int) ([]api.FundingTrade, error) {
+	query := `
+	SELECT trade_id, timestamp, amount, rate, period
+	FROM ws_funding_trades
+	WHERE currency = ?
+	ORDER BY timestamp DESC
+	LIMIT ?`
+
+	rows, err := d.db.Query(query, currency, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var trades []api.FundingTrade
+	for rows.Next() {
+		var t api.FundingTrade
+		if err := rows.Scan(
+			&t.ID,
+			&t.MTS,
+			&t.Amount,
+			&t.Rate,
+			&t.Period,
+		); err != nil {
+			return nil, err
+		}
+		trades = append(trades, t)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return trades, nil
+}
+
+// GetHistoricalWSFundingTrades retrieves historical WebSocket funding trades for the specified currency
+func (d *Database) GetHistoricalWSFundingTrades(currency string, startTime, endTime time.Time, limit int) ([]api.FundingTrade, error) {
+	query := `
+	SELECT trade_id, timestamp, amount, rate, period
+	FROM ws_funding_trades
+	WHERE currency = ? AND timestamp BETWEEN ? AND ?
+	ORDER BY timestamp DESC
+	LIMIT ?`
+
+	rows, err := d.db.Query(query, currency, startTime.UnixMilli(), endTime.UnixMilli(), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var trades []api.FundingTrade
+	for rows.Next() {
+		var t api.FundingTrade
+		if err := rows.Scan(
+			&t.ID,
+			&t.MTS,
+			&t.Amount,
+			&t.Rate,
+			&t.Period,
+		); err != nil {
+			return nil, err
+		}
+		trades = append(trades, t)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return trades, nil
 }

@@ -95,7 +95,7 @@ func main() {
 
 		tickerTask := scheduler.NewPeriodicTask(
 			fmt.Sprintf("FundingTicker_%s", currency),
-			1*time.Hour,
+			1*time.Minute,
 			func(ctx context.Context) error {
 				return updateFundingTicker(ctx, client, database, currency)
 			},
@@ -117,6 +117,9 @@ func main() {
 		log.Printf("Set up minute FundingBook data collection task for %s", currency)
 	}
 
+	// Start WebSocket handler in a new goroutine
+	go handleWebSocketData(ctx, database)
+
 	// Create a signal capture
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
@@ -132,6 +135,41 @@ func main() {
 	<-signalChan
 	fmt.Println("Received stop signal, gracefully exiting...")
 	scheduler.Stop() // Stop scheduler
+}
+
+// handleWebSocketData handles WebSocket data in a separate goroutine
+func handleWebSocketData(ctx context.Context, database *db.Database) {
+	// Create new WebSocket client
+	wsClient := api.NewWebSocketClient()
+
+	// Connect to Bitfinex WebSocket
+	if err := wsClient.Connect(); err != nil {
+		log.Printf("Failed to connect to Bitfinex WebSocket: %v", err)
+		return
+	}
+	defer wsClient.Close()
+
+	// Subscribe to fUSD funding trades
+	if err := wsClient.SubscribeToFundingTrades("fUSD"); err != nil {
+		log.Printf("Failed to subscribe to funding trades: %v", err)
+		return
+	}
+
+	// Handle incoming messages
+	wsClient.HandleFundingTrades(func(trade api.FundingTrade, msgType string) error {
+		// Store trade in database
+		_, err := database.SaveWSFundingTrade("fUSD", trade, msgType)
+		if err != nil {
+			log.Printf("Failed to store trade: %v", err)
+			return err
+		}
+		log.Printf("Stored funding trade: %+v", trade)
+		return nil
+	})
+
+	// Wait for context cancellation
+	<-ctx.Done()
+	log.Println("WebSocket handler shutting down...")
 }
 
 // Get initial FundingStats data
