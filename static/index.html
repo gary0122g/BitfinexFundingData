@@ -1240,27 +1240,32 @@
         function updatePDFChartWithRates(rates) {
             const binCount = parseInt(document.getElementById('bin-count').value);
 
-            // Calculate histogram
-            const minRate = Math.min(...rates);
-            const maxRate = Math.max(...rates);
-            const binWidth = (maxRate - minRate) / binCount;
-
-            const bins = Array(binCount).fill(0);
-            const labels = [];
-
-            for (let i = 0; i < binCount; i++) {
-                const binStart = minRate + i * binWidth;
-                const binEnd = binStart + binWidth;
-                labels.push(`${binStart.toFixed(2)}%`);
-
-                for (const rate of rates) {
-                    if (rate >= binStart && rate < binEnd) {
-                        bins[i]++;
-                    }
-                }
+            // Find min and max rates using iteration instead of spread operator
+            let minRate = rates[0];
+            let maxRate = rates[0];
+            for (let i = 1; i < rates.length; i++) {
+                if (rates[i] < minRate) minRate = rates[i];
+                if (rates[i] > maxRate) maxRate = rates[i];
             }
 
-            // Normalize to get PDF
+            const binWidth = (maxRate - minRate) / binCount;
+            const bins = new Array(binCount).fill(0);
+            const labels = new Array(binCount);
+
+            // Generate labels first
+            for (let i = 0; i < binCount; i++) {
+                const binStart = minRate + i * binWidth;
+                labels[i] = `${binStart.toFixed(2)}%`;
+            }
+
+            // Single pass binning
+            for (let i = 0; i < rates.length; i++) {
+                const rate = rates[i];
+                const binIndex = Math.min(Math.floor((rate - minRate) / binWidth), binCount - 1);
+                if (binIndex >= 0) bins[binIndex]++;
+            }
+
+            // Calculate PDF
             const total = bins.reduce((sum, count) => sum + count, 0);
             const pdf = bins.map(count => count / total);
 
@@ -1297,6 +1302,12 @@
                             title: {
                                 display: true,
                                 text: '利率 (APR %)'
+                            },
+                            ticks: {
+                                maxRotation: 45,
+                                minRotation: 45,
+                                autoSkip: true,
+                                maxTicksLimit: 20
                             }
                         }
                     },

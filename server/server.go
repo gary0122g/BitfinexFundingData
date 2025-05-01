@@ -246,7 +246,7 @@ func (s *APIServer) handleGetAllWSFundingTrades(w http.ResponseWriter, r *http.R
 	endTime := time.Now()
 
 	// 使用一個很大的 limit 值
-	trades, err := s.database.GetHistoricalWSFundingTrades(currency, startTime, endTime, 1000000)
+	trades, err := s.database.GetHistoricalWSFundingTrades(currency, startTime, endTime, 10000)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to retrieve funding trades: %v", err), http.StatusInternalServerError)
 		return

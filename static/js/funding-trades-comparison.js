@@ -218,4 +218,140 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Listen for limit changes
     document.getElementById('limit-select').addEventListener('change', loadComparisonData);
-}); 
+});
+
+function loadPDFDistribution() {
+    const currency = document.getElementById('currency-select').value;
+    const formattedCurrency = currency.startsWith('f') ? currency : 'f' + currency;
+
+    // 顯示載入中狀態
+    document.getElementById('pdf-loading').style.display = 'block';
+    document.getElementById('pdf-error').style.display = 'none';
+
+    fetch(`/api/ws-funding-trades/${formattedCurrency}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            // 隱藏載入中狀態
+            document.getElementById('pdf-loading').style.display = 'none';
+
+            if (!data || data.length === 0) {
+                throw new Error('沒有收到數據或數據為空');
+            }
+
+            // 使用 Web Worker 處理大量數據
+            const rates = data.map(trade => trade.rate * 365 * 100); // 轉換為 APR 百分比
+            processDataInChunks(rates);
+            updateLastUpdated('pdf-last-updated');
+        })
+        .catch(error => {
+            console.error('加載 PDF 分佈數據失敗:', error);
+            document.getElementById('pdf-loading').style.display = 'none';
+            document.getElementById('pdf-error').style.display = 'block';
+            document.getElementById('pdf-error').textContent = `載入失敗: ${error.message}`;
+        });
+}
+
+function processDataInChunks(rates) {
+    const binCount = parseInt(document.getElementById('bin-count').value);
+
+    // 使用更高效的方式計算最大最小值
+    let minRate = rates[0];
+    let maxRate = rates[0];
+
+    // 分批處理數據以避免堆棧溢出
+    const chunkSize = 10000;
+    for (let i = 0; i < rates.length; i += chunkSize) {
+        const chunk = rates.slice(i, i + chunkSize);
+        chunk.forEach(rate => {
+            if (rate < minRate) minRate = rate;
+            if (rate > maxRate) maxRate = rate;
+        });
+    }
+
+    const binWidth = (maxRate - minRate) / binCount;
+    const bins = new Array(binCount).fill(0);
+    const labels = new Array(binCount);
+
+    // 生成標籤
+    for (let i = 0; i < binCount; i++) {
+        const binStart = minRate + i * binWidth;
+        labels[i] = `${binStart.toFixed(2)}%`;
+    }
+
+    // 分批處理數據填充分箱
+    for (let i = 0; i < rates.length; i += chunkSize) {
+        const chunk = rates.slice(i, i + chunkSize);
+        chunk.forEach(rate => {
+            const binIndex = Math.min(Math.floor((rate - minRate) / binWidth), binCount - 1);
+            if (binIndex >= 0) bins[binIndex]++;
+        });
+    }
+
+    // 計算 PDF
+    const total = bins.reduce((sum, count) => sum + count, 0);
+    const pdf = bins.map(count => count / total);
+
+    // 更新圖表
+    updatePDFChart(labels, pdf);
+}
+
+function updatePDFChart(labels, pdf) {
+    const ctx = document.getElementById('pdf-chart').getContext('2d');
+
+    if (pdfChart) {
+        pdfChart.destroy();
+    }
+
+    pdfChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: '機率密度',
+                data: pdf,
+                backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                borderColor: 'rgba(54, 162, 235, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: '機率密度'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: '利率 (APR %)'
+                    },
+                    ticks: {
+                        maxRotation: 45,
+                        minRotation: 45,
+                        autoSkip: true,
+                        maxTicksLimit: 20
+                    }
+                }
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function (context) {
+                            return `機率: ${(context.raw * 100).toFixed(2)}%`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
