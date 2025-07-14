@@ -1203,72 +1203,69 @@
         function loadPDFDistribution() {
             const currency = document.getElementById('currency-select').value;
             const formattedCurrency = currency.startsWith('f') ? currency : 'f' + currency;
+            const binCount = document.getElementById('bin-count').value;
 
             // 顯示載入中狀態
             document.getElementById('pdf-loading').style.display = 'block';
             document.getElementById('pdf-error').style.display = 'none';
 
-            // 使用正確的 API 端點
-            fetch(`/api/ws-funding-trades/${formattedCurrency}`)
+            // 調用新的預計算API端點
+            fetch(`/api/rate-distribution/${formattedCurrency}?bins=${binCount}`)
                 .then(response => {
                     if (!response.ok) {
                         throw new Error(`HTTP error! Status: ${response.status}`);
                     }
                     return response.json();
                 })
-                .then(data => {
+                .then(distribution => {
                     // 隱藏載入中狀態
                     document.getElementById('pdf-loading').style.display = 'none';
 
-                    if (!data || data.length === 0) {
-                        throw new Error('沒有收到數據或數據為空');
+                    // 檢查是否收到有效的分布數據
+                    if (!distribution) {
+                        throw new Error('沒有收到分布數據');
                     }
 
-                    // 將數據轉換為適合繪製 PDF 的格式
-                    const rates = data.map(trade => trade.rate * 365 * 100); // 轉換為 APR
-                    updatePDFChartWithRates(rates);
+                    // 如果是臨時響應（服務尚未實作完成）
+                    if (distribution.message) {
+                        console.log('Service message:', distribution.message);
+                        // 暫時顯示訊息
+                        document.getElementById('pdf-error').style.display = 'block';
+                        document.getElementById('pdf-error').textContent = `服務正在開發中: ${distribution.message}`;
+                        return;
+                    }
+
+                    // 檢查是否有PDF數據
+                    if (!distribution.pdf || !distribution.labels) {
+                        throw new Error('收到的分布數據格式無效');
+                    }
+
+                    console.log('=== PDF Distribution Data ===');
+                    console.log(`Total trades: ${distribution.total_trades}`);
+                    console.log('Min rate:', distribution.min_rate);
+                    console.log('Max rate:', distribution.max_rate);
+                    console.log('Bin width:', distribution.bin_width);
+                    console.log('Labels (first 5):', distribution.labels.slice(0, 5));
+                    console.log('PDF values (first 5):', distribution.pdf.slice(0, 5));
+                    console.log('Distribution counts (first 5):', distribution.distribution.slice(0, 5));
+                    console.log('==============================');
+
+                    // 直接使用預計算的PDF數據
+                    updatePDFChart(distribution.labels, distribution.pdf);
                     updateLastUpdated('pdf-last-updated');
+
+                    // 顯示統計資訊
+                    displayDistributionStats(distribution);
                 })
                 .catch(error => {
-                    console.error('加載 PDF 分佈數據失敗:', error);
+                    console.error('加載PDF分佈數據失敗:', error);
                     document.getElementById('pdf-loading').style.display = 'none';
                     document.getElementById('pdf-error').style.display = 'block';
                     document.getElementById('pdf-error').textContent = `載入失敗: ${error.message}`;
                 });
         }
 
-        function updatePDFChartWithRates(rates) {
-            const binCount = parseInt(document.getElementById('bin-count').value);
-
-            // Find min and max rates using iteration instead of spread operator
-            let minRate = rates[0];
-            let maxRate = rates[0];
-            for (let i = 1; i < rates.length; i++) {
-                if (rates[i] < minRate) minRate = rates[i];
-                if (rates[i] > maxRate) maxRate = rates[i];
-            }
-
-            const binWidth = (maxRate - minRate) / binCount;
-            const bins = new Array(binCount).fill(0);
-            const labels = new Array(binCount);
-
-            // Generate labels first
-            for (let i = 0; i < binCount; i++) {
-                const binStart = minRate + i * binWidth;
-                labels[i] = `${binStart.toFixed(2)}%`;
-            }
-
-            // Single pass binning
-            for (let i = 0; i < rates.length; i++) {
-                const rate = rates[i];
-                const binIndex = Math.min(Math.floor((rate - minRate) / binWidth), binCount - 1);
-                if (binIndex >= 0) bins[binIndex]++;
-            }
-
-            // Calculate PDF
-            const total = bins.reduce((sum, count) => sum + count, 0);
-            const pdf = bins.map(count => count / total);
-
+        function updatePDFChart(labels, pdf) {
             const ctx = document.getElementById('pdf-chart').getContext('2d');
 
             if (pdfChart) {
@@ -1306,8 +1303,8 @@
                             ticks: {
                                 maxRotation: 45,
                                 minRotation: 45,
-                                autoSkip: true,
-                                maxTicksLimit: 20
+                                autoSkip: false,
+                                maxTicksLimit: 30
                             }
                         }
                     },
@@ -1322,6 +1319,11 @@
                     }
                 }
             });
+        }
+
+        function displayDistributionStats(distribution) {
+            // 顯示分佈統計資訊
+            console.log('Distribution stats:', distribution);
         }
     </script>
 </body>

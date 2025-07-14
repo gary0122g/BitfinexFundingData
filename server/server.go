@@ -31,8 +31,14 @@ func NewAPIServer(database *db.Database) *APIServer {
 
 // routes sets up API routes
 func (s *APIServer) routes() {
-	// Static file service
-	s.router.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
+	// Static file service with no-cache headers for development
+	staticHandler := http.StripPrefix("/static/", http.FileServer(http.Dir("./static")))
+	s.router.PathPrefix("/static/").Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+		staticHandler.ServeHTTP(w, r)
+	}))
 
 	// Homepage
 	s.router.HandleFunc("/", s.handleHome).Methods("GET")
