@@ -260,9 +260,15 @@ function loadPDFDistribution() {
                 throw new Error('收到的分布數據格式無效');
             }
 
-            console.log(`收到預計算的分布數據: ${distribution.total_trades} 筆交易`);
-            console.log('Labels:', distribution.labels);
-            console.log('PDF values:', distribution.pdf);
+            console.log('=== PDF Distribution Data ===');
+            console.log(`Total trades: ${distribution.total_trades}`);
+            console.log('Min rate:', distribution.min_rate);
+            console.log('Max rate:', distribution.max_rate);
+            console.log('Bin width:', distribution.bin_width);
+            console.log('Labels (first 5):', distribution.labels.slice(0, 5));
+            console.log('PDF values (first 5):', distribution.pdf.slice(0, 5));
+            console.log('Distribution counts (first 5):', distribution.distribution.slice(0, 5));
+            console.log('==============================');
 
             // 直接使用預計算的PDF數據
             updatePDFChart(distribution.labels, distribution.pdf);
