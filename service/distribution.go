@@ -35,8 +35,12 @@ func (ds *DistributionService) InitializeDistribution(currency string, binCount 
 	// 檢查是否已經存在分布
 	existing, err := ds.getDistribution(currency, binCount)
 	if err == nil && existing != nil {
+		fmt.Printf("Distribution already exists for %s with %d bins, %d total trades\n",
+			currency, binCount, existing.TotalTrades)
 		return nil // 已經存在，不需要重新初始化
 	}
+
+	fmt.Printf("No existing distribution found for %s, initializing...\n", currency)
 
 	// 獲取所有交易數據來計算初始分布
 	trades, err := ds.database.GetAllWSFundingTrades(currency)
@@ -47,6 +51,9 @@ func (ds *DistributionService) InitializeDistribution(currency string, binCount 
 	if len(trades) == 0 {
 		return fmt.Errorf("no trades found for currency %s", currency)
 	}
+
+	// 添加日誌來顯示處理的記錄數量
+	fmt.Printf("Initializing distribution for %s with %d trades\n", currency, len(trades))
 
 	// 轉換為 APR 百分比
 	rates := make([]float64, len(trades))

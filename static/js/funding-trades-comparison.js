@@ -261,6 +261,8 @@ function loadPDFDistribution() {
             }
 
             console.log(`收到預計算的分布數據: ${distribution.total_trades} 筆交易`);
+            console.log('Labels:', distribution.labels);
+            console.log('PDF values:', distribution.pdf);
 
             // 直接使用預計算的PDF數據
             updatePDFChart(distribution.labels, distribution.pdf);
@@ -359,8 +361,8 @@ function updatePDFChart(labels, pdf) {
                     ticks: {
                         maxRotation: 45,
                         minRotation: 45,
-                        autoSkip: true,
-                        maxTicksLimit: 20
+                        autoSkip: false,
+                        maxTicksLimit: 30
                     }
                 }
             },
