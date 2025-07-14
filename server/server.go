@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gary0122g/BitfinexFundingData/db"
+	"github.com/gary0122g/BitfinexFundingData/service"
 	"github.com/gorilla/mux"
 )
 
@@ -57,6 +58,9 @@ func (s *APIServer) routes() {
 
 	// All WebSocket Funding Trades API
 	api.HandleFunc("/ws-funding-trades/{currency}", s.handleGetAllWSFundingTrades).Methods("GET")
+
+	// Rate Distribution API
+	api.HandleFunc("/rate-distribution/{currency}", s.handleGetRateDistribution).Methods("GET")
 }
 
 // Start launches the API server
@@ -254,4 +258,35 @@ func (s *APIServer) handleGetAllWSFundingTrades(w http.ResponseWriter, r *http.R
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(trades)
+}
+
+// handleGetRateDistribution processes requests for precomputed rate distribution data
+func (s *APIServer) handleGetRateDistribution(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	currency := vars["currency"]
+	if !strings.HasPrefix(currency, "f") {
+		currency = "f" + currency
+	}
+
+	// 獲取分箱數量參數
+	binCountStr := r.URL.Query().Get("bins")
+	binCount := 20 // 預設值
+	if binCountStr != "" {
+		if parsed, err := strconv.Atoi(binCountStr); err == nil && parsed > 0 {
+			binCount = parsed
+		}
+	}
+
+	distributionService := service.NewDistributionService(s.database)
+
+	distribution, err := distributionService.GetDistribution(currency, binCount)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get rate distribution: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=300") // 快取5分鐘
+
+	json.NewEncoder(w).Encode(distribution)
 }

@@ -223,33 +223,54 @@ document.addEventListener('DOMContentLoaded', function () {
 function loadPDFDistribution() {
     const currency = document.getElementById('currency-select').value;
     const formattedCurrency = currency.startsWith('f') ? currency : 'f' + currency;
+    const binCount = document.getElementById('bin-count').value;
 
     // 顯示載入中狀態
     document.getElementById('pdf-loading').style.display = 'block';
     document.getElementById('pdf-error').style.display = 'none';
 
-    fetch(`/api/ws-funding-trades/${formattedCurrency}`)
+    // 調用新的預計算API端點
+    fetch(`/api/rate-distribution/${formattedCurrency}?bins=${binCount}`)
         .then(response => {
             if (!response.ok) {
                 throw new Error(`HTTP error! Status: ${response.status}`);
             }
             return response.json();
         })
-        .then(data => {
+        .then(distribution => {
             // 隱藏載入中狀態
             document.getElementById('pdf-loading').style.display = 'none';
 
-            if (!data || data.length === 0) {
-                throw new Error('沒有收到數據或數據為空');
+            // 檢查是否收到有效的分布數據
+            if (!distribution) {
+                throw new Error('沒有收到分布數據');
             }
 
-            // 使用 Web Worker 處理大量數據
-            const rates = data.map(trade => trade.rate * 365 * 100); // 轉換為 APR 百分比
-            processDataInChunks(rates);
+            // 如果是臨時響應（服務尚未實作完成）
+            if (distribution.message) {
+                console.log('Service message:', distribution.message);
+                // 暫時顯示訊息
+                document.getElementById('pdf-error').style.display = 'block';
+                document.getElementById('pdf-error').textContent = `服務正在開發中: ${distribution.message}`;
+                return;
+            }
+
+            // 檢查是否有PDF數據
+            if (!distribution.pdf || !distribution.labels) {
+                throw new Error('收到的分布數據格式無效');
+            }
+
+            console.log(`收到預計算的分布數據: ${distribution.total_trades} 筆交易`);
+
+            // 直接使用預計算的PDF數據
+            updatePDFChart(distribution.labels, distribution.pdf);
             updateLastUpdated('pdf-last-updated');
+
+            // 顯示統計資訊
+            displayDistributionStats(distribution);
         })
         .catch(error => {
-            console.error('加載 PDF 分佈數據失敗:', error);
+            console.error('加載PDF分佈數據失敗:', error);
             document.getElementById('pdf-loading').style.display = 'none';
             document.getElementById('pdf-error').style.display = 'block';
             document.getElementById('pdf-error').textContent = `載入失敗: ${error.message}`;
@@ -354,4 +375,29 @@ function updatePDFChart(labels, pdf) {
             }
         }
     });
+}
+
+// 新增函數：顯示分布統計資訊
+function displayDistributionStats(distribution) {
+    // 可以添加一個顯示統計資訊的區域
+    const statsHtml = `
+        <div class="distribution-stats mt-3">
+            <small class="text-muted">
+                總交易數: ${distribution.total_trades ? distribution.total_trades.toLocaleString() : 'N/A'} | 
+                利率範圍: ${distribution.min_rate ? distribution.min_rate.toFixed(2) : 'N/A'}% - ${distribution.max_rate ? distribution.max_rate.toFixed(2) : 'N/A'}% |
+                最後更新: ${distribution.last_updated ? new Date(distribution.last_updated).toLocaleString() : '未知'}
+            </small>
+        </div>
+    `;
+
+    // 找到合適的位置插入統計資訊
+    const chartContainer = document.querySelector('#pdf-distribution-view .chart-container');
+    if (chartContainer) {
+        let statsContainer = chartContainer.querySelector('.distribution-stats');
+        if (!statsContainer) {
+            chartContainer.insertAdjacentHTML('afterend', statsHtml);
+        } else {
+            statsContainer.outerHTML = statsHtml;
+        }
+    }
 }

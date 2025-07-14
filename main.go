@@ -19,124 +19,6 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-func main() {
-	currentDir, err := os.Getwd()
-	if err != nil {
-		log.Fatalf("Unable to get current working directory: %v", err)
-	}
-
-	dbPath := filepath.Join(currentDir, "test.db")
-
-	// Check if database file exists
-	_, err = os.Stat(dbPath)
-	if os.IsNotExist(err) {
-		log.Printf("Database file %s does not exist, will create a new database", dbPath)
-		// Can continue, InitDB will create a new database
-	}
-
-	// Initialize database and get connection
-	sqlDB, err := db.InitDB(dbPath)
-	if err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
-	}
-	defer sqlDB.Close()
-
-	fmt.Println("Successfully connected to database!")
-
-	// Create database wrapper
-	database := db.NewDatabase(sqlDB)
-	apiServer := server.NewAPIServer(database)
-	// Create scheduler
-	scheduler := scheduler.NewScheduler(5, 50) // 5 workers, queue size 50
-	scheduler.Start()
-	defer scheduler.Stop()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Create API client
-	client := api.NewClient()
-
-	currencies := []string{"fUSD", "fUST"}
-
-	// Get initial data for each currency
-	for _, currency := range currencies {
-		// Get initial FundingStats data
-		if err := fetchInitialFundingStats(ctx, client, database, currency); err != nil {
-			log.Printf("Failed to get initial FundingStats data for %s: %v", currency, err)
-		}
-
-		// Get initial FundingTicker data
-		if err := fetchInitialFundingTicker(ctx, client, database, currency); err != nil {
-			log.Printf("Failed to get initial FundingTicker data for %s: %v", currency, err)
-		}
-
-		// Get initial FundingBook data
-		if err := fetchInitialFundingBook(ctx, client, database, currency); err != nil {
-			log.Printf("Failed to get initial FundingBook data for %s: %v", currency, err)
-		}
-	}
-
-	// Create periodic tasks for each currency
-	for _, currency := range currencies {
-		currency := currency // Create local copy for use in closures
-
-		// Create hourly FundingStats task
-		hourlyStatsTask := scheduler.NewPeriodicTask(
-			fmt.Sprintf("FundingStats_%s_Hourly", currency),
-			1*time.Hour, // Run once per hour
-			func(ctx context.Context) error {
-				return updateFundingStats(ctx, client, database, currency)
-			},
-			3, // Number of retries
-		)
-		scheduler.SubmitTask(hourlyStatsTask)
-		log.Printf("Set up hourly FundingStats data collection task for %s", currency)
-
-		tickerTask := scheduler.NewPeriodicTask(
-			fmt.Sprintf("FundingTicker_%s", currency),
-			1*time.Minute,
-			func(ctx context.Context) error {
-				return updateFundingTicker(ctx, client, database, currency)
-			},
-			3, // Number of retries
-		)
-		scheduler.SubmitTask(tickerTask)
-		log.Printf("Set up hourly FundingTicker data collection task for %s", currency)
-
-		// Create FundingBook task to run every minute
-		bookTask := scheduler.NewPeriodicTask(
-			fmt.Sprintf("FundingBook_%s", currency),
-			1*time.Minute, // Run every minute
-			func(ctx context.Context) error {
-				return updateFundingBook(ctx, client, database, currency)
-			},
-			3, // Number of retries
-		)
-		scheduler.SubmitTask(bookTask)
-		log.Printf("Set up minute FundingBook data collection task for %s", currency)
-	}
-
-	// Start WebSocket handler in a new goroutine
-	go handleWebSocketData(ctx, database)
-
-	// Create a signal capture
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
-
-	// Start API server in a new goroutine
-	go func() {
-		if err := apiServer.Start(":8080"); err != nil {
-			log.Fatalf("Failed to start API server: %v", err)
-		}
-	}()
-
-	// Wait for termination signal
-	<-signalChan
-	fmt.Println("Received stop signal, gracefully exiting...")
-	scheduler.Stop() // Stop scheduler
-}
-
 // handleWebSocketData handles WebSocket data in a separate goroutine
 func handleWebSocketData(ctx context.Context, database *db.Database) {
 	// Create new WebSocket client
@@ -417,4 +299,122 @@ func updateFundingBook(ctx context.Context, client *api.Client, database *db.Dat
 	log.Printf("Successfully retrieved and saved %d latest aggregated funding book records for %s", bookCount, currency)
 
 	return nil
+}
+
+func main() {
+	currentDir, err := os.Getwd()
+	if err != nil {
+		log.Fatalf("Unable to get current working directory: %v", err)
+	}
+
+	dbPath := filepath.Join(currentDir, "test.db")
+
+	// Check if database file exists
+	_, err = os.Stat(dbPath)
+	if os.IsNotExist(err) {
+		log.Printf("Database file %s does not exist, will create a new database", dbPath)
+		// Can continue, InitDB will create a new database
+	}
+
+	// Initialize database and get connection
+	sqlDB, err := db.InitDB(dbPath)
+	if err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+	defer sqlDB.Close()
+
+	fmt.Println("Successfully connected to database!")
+
+	// Create database wrapper
+	database := db.NewDatabase(sqlDB)
+	apiServer := server.NewAPIServer(database)
+	// Create scheduler
+	scheduler := scheduler.NewScheduler(5, 50) // 5 workers, queue size 50
+	scheduler.Start()
+	defer scheduler.Stop()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Create API client
+	client := api.NewClient()
+
+	currencies := []string{"fUSD", "fUST"}
+
+	// Get initial data for each currency
+	for _, currency := range currencies {
+		// Get initial FundingStats data
+		if err := fetchInitialFundingStats(ctx, client, database, currency); err != nil {
+			log.Printf("Failed to get initial FundingStats data for %s: %v", currency, err)
+		}
+
+		// Get initial FundingTicker data
+		if err := fetchInitialFundingTicker(ctx, client, database, currency); err != nil {
+			log.Printf("Failed to get initial FundingTicker data for %s: %v", currency, err)
+		}
+
+		// Get initial FundingBook data
+		if err := fetchInitialFundingBook(ctx, client, database, currency); err != nil {
+			log.Printf("Failed to get initial FundingBook data for %s: %v", currency, err)
+		}
+	}
+
+	// Create periodic tasks for each currency
+	for _, currency := range currencies {
+		currency := currency // Create local copy for use in closures
+
+		// Create hourly FundingStats task
+		hourlyStatsTask := scheduler.NewPeriodicTask(
+			fmt.Sprintf("FundingStats_%s_Hourly", currency),
+			1*time.Hour, // Run once per hour
+			func(ctx context.Context) error {
+				return updateFundingStats(ctx, client, database, currency)
+			},
+			3, // Number of retries
+		)
+		scheduler.SubmitTask(hourlyStatsTask)
+		log.Printf("Set up hourly FundingStats data collection task for %s", currency)
+
+		tickerTask := scheduler.NewPeriodicTask(
+			fmt.Sprintf("FundingTicker_%s", currency),
+			1*time.Minute,
+			func(ctx context.Context) error {
+				return updateFundingTicker(ctx, client, database, currency)
+			},
+			3, // Number of retries
+		)
+		scheduler.SubmitTask(tickerTask)
+		log.Printf("Set up hourly FundingTicker data collection task for %s", currency)
+
+		// Create FundingBook task to run every minute
+		bookTask := scheduler.NewPeriodicTask(
+			fmt.Sprintf("FundingBook_%s", currency),
+			1*time.Minute, // Run every minute
+			func(ctx context.Context) error {
+				return updateFundingBook(ctx, client, database, currency)
+			},
+			3, // Number of retries
+		)
+		scheduler.SubmitTask(bookTask)
+		log.Printf("Set up minute FundingBook data collection task for %s", currency)
+	}
+
+	// Start WebSocket handler in a new goroutine
+	go handleWebSocketData(ctx, database)
+
+	// Create a signal capture
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// Start API server in a new goroutine
+	go func() {
+		if err := apiServer.Start(":8080"); err != nil {
+			log.Fatalf("Failed to start API server: %v", err)
+		}
+	}()
+
+	// Wait for termination signal
+	<-signalChan
+	fmt.Println("Received stop signal, gracefully exiting...")
+	scheduler.Stop() // Stop scheduler
 }

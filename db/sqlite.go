@@ -770,3 +770,60 @@ func (db *Database) GetFundingTradesDistribution(currency string, limit int) ([]
 
 	return distributions, nil
 }
+
+// GetDB returns the underlying sql.DB instance
+func (d *Database) GetDB() *sql.DB {
+	return d.db
+}
+
+// GetAllWSFundingTrades 獲取所有WebSocket資金交易（用於初始化分布）
+func (d *Database) GetAllWSFundingTrades(currency string) ([]api.FundingTrade, error) {
+	query := `
+	SELECT trade_id, timestamp, amount, rate, period
+	FROM ws_funding_trades
+	WHERE currency = ?
+	ORDER BY trade_id ASC`
+
+	rows, err := d.db.Query(query, currency)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var trades []api.FundingTrade
+	for rows.Next() {
+		var t api.FundingTrade
+		if err := rows.Scan(&t.ID, &t.MTS, &t.Amount, &t.Rate, &t.Period); err != nil {
+			return nil, err
+		}
+		trades = append(trades, t)
+	}
+
+	return trades, rows.Err()
+}
+
+// GetWSFundingTradesAfterID 獲取指定ID之後的交易（用於增量更新）
+func (d *Database) GetWSFundingTradesAfterID(currency string, lastID int64) ([]api.FundingTrade, error) {
+	query := `
+	SELECT trade_id, timestamp, amount, rate, period
+	FROM ws_funding_trades
+	WHERE currency = ? AND trade_id > ?
+	ORDER BY trade_id ASC`
+
+	rows, err := d.db.Query(query, currency, lastID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var trades []api.FundingTrade
+	for rows.Next() {
+		var t api.FundingTrade
+		if err := rows.Scan(&t.ID, &t.MTS, &t.Amount, &t.Rate, &t.Period); err != nil {
+			return nil, err
+		}
+		trades = append(trades, t)
+	}
+
+	return trades, rows.Err()
+}

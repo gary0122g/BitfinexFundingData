@@ -157,8 +157,25 @@ func CreateTables(db *sql.DB) error {
 	);
 	CREATE INDEX IF NOT EXISTS idx_ws_funding_trades_currency_timestamp ON ws_funding_trades(currency, timestamp);
 	CREATE INDEX IF NOT EXISTS idx_ws_funding_trades_trade_id ON ws_funding_trades(trade_id);
-	`
-
+	
+	-- Rate Distribution table
+	CREATE TABLE IF NOT EXISTS rate_distribution (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		currency TEXT NOT NULL,
+		bin_count INTEGER NOT NULL,
+		min_rate REAL NOT NULL,
+		max_rate REAL NOT NULL,
+		bin_width REAL NOT NULL,
+		distribution TEXT NOT NULL, -- JSON array of bin counts
+		total_trades INTEGER NOT NULL,
+		last_processed_trade_id INTEGER NOT NULL DEFAULT 0,
+		created_at INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
+		updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
+		UNIQUE(currency, bin_count)
+	);
+	CREATE INDEX IF NOT EXISTS idx_rate_distribution_currency ON rate_distribution(currency);
+	CREATE INDEX IF NOT EXISTS idx_rate_distribution_last_processed ON rate_distribution(last_processed_trade_id);
+    `
 	_, err := db.Exec(createTableSQL)
 	return err
 }
